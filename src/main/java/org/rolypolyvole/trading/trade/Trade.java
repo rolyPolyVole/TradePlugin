@@ -76,7 +76,7 @@ public class Trade {
         Inventory otherInventory = otherPlayer.getOpenInventory().getTopInventory();
         Inventory topInventory = player.getOpenInventory().getTopInventory();
 
-        if (addItemToInvAndDrop(item, player)) {
+        if (!attemptAddItemToGUI(item, player)) { //Returns true if it dropped any items
             player.playSound(player.getLocation(), Sound.BLOCK_CHEST_LOCKED, 1.0F, 0.75F);
             return;
         }
@@ -139,14 +139,14 @@ public class Trade {
         changeToCancelledGUI(player);
     }
 
-    private boolean addItemToInvAndDrop(ItemStack item, Player player) {
+    private boolean attemptAddItemToGUI(ItemStack item, Player player) {
         HashMap<Integer, ItemStack> leftovers = player.getInventory().addItem(item);
 
         if (leftovers.isEmpty()) {
-            return false;
-        } else {
-            leftovers.forEach((slot, leftover) -> player.getWorld().dropItem(player.getLocation(), leftover));
             return true;
+        } else {
+            leftovers.forEach((slot, leftover) -> player.getInventory().addItem(leftover));
+            return false;
         }
     }
 
