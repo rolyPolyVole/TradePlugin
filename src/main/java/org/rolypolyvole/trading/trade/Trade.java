@@ -76,7 +76,7 @@ public class Trade {
         Inventory otherInventory = otherPlayer.getOpenInventory().getTopInventory();
         Inventory topInventory = player.getOpenInventory().getTopInventory();
 
-        if (!attemptAddItemToGUI(item, player)) { //Returns true if it dropped any items
+        if (!attemptAddItemToGUI(item, player)) { //Returns false if it failed to add items
             player.playSound(player.getLocation(), Sound.BLOCK_CHEST_LOCKED, 1.0F, 0.75F);
             return;
         }
