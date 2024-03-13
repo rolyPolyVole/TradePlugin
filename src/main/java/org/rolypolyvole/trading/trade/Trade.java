@@ -20,13 +20,14 @@ import org.rolypolyvole.trading.Trading;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class Trade {
+    public static final List<Integer> playerSlots = List.of(0, 1, 2, 3, 9, 10, 11, 12);
+    public static final List<Integer> otherPlayerSlots = List.of(5, 6, 7, 8, 14, 15, 16, 17);
     private final Trading main;
     private final List<Player> players;
     private final HashMap<Player, HashMap<Integer, ItemStack>> playerToItemsMap = new HashMap<>(2);
-    private final List<Integer> playerSlots = List.of(0, 1, 2, 3, 9, 10, 11, 12);
-    private final List<Integer> otherPlayerSlots = List.of(5, 6, 7, 8, 14, 15, 16, 17);
     private int confirmations = 0;
     private BukkitTask task;
     private boolean isEnding = false;
@@ -42,7 +43,7 @@ public class Trade {
         players.forEach(player -> player.playSound(player.getLocation(), Sound.BLOCK_CHEST_OPEN, 1.0F, 1.0F));
     }
 
-    public void endTrade(boolean terminate) {
+    public void endTrade(boolean force) {
         if (isEnding) return; // Prevent recursion if already ending
         isEnding = true;
 
@@ -54,77 +55,68 @@ public class Trade {
             task.cancel();
         }
 
-        if (terminate) {
-            for (Player player : players) {
-                Inventory playerInventory = player.getInventory();
-                HashMap<Integer, ItemStack> itemsMap = playerToItemsMap.get(player);
+        for (Player player : players) {
+            Inventory playerInventory = player.getInventory();
+            HashMap<Integer, ItemStack> itemsMap = playerToItemsMap.get(force ? player : getOtherPlayer(player));
 
-                itemsMap.forEach((index, item) -> playerInventory.addItem(item).forEach(
-                    (slot, leftover) -> player.getWorld().dropItem(player.getLocation(), leftover)
-                ));
+            itemsMap.forEach((index, item) -> playerInventory.addItem(item).forEach(
+                (slot, leftover) -> player.getWorld().dropItem(player.getLocation(), leftover)
+            ));
 
+            if (force) {
                 player.playSound(player.getLocation(), Sound.BLOCK_CHEST_CLOSE, 1.0F, 1.0F);
-            }
-        } else {
-            for (Player player : players) {
-                Inventory playerInventory = player.getInventory();
-                HashMap<Integer, ItemStack> itemsMap = playerToItemsMap.get(getOtherPlayer(player));
-
-                itemsMap.forEach((index, item) -> playerInventory.addItem(item).forEach(
-                    (slot, leftover) -> player.getWorld().dropItem(player.getLocation(), leftover)
-                ));
-
+            } else {
                 player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.5F, 2.0F);
             }
         }
     }
 
-    public synchronized void addItem(Player player, ItemStack item) {
+    public synchronized void addItemToTrade(Player player, ItemStack item) {
         Player otherPlayer = getOtherPlayer(player);
+        Inventory otherInventory = otherPlayer.getOpenInventory().getTopInventory();
+        Inventory topInventory = player.getOpenInventory().getTopInventory();
 
-        for (int i : otherPlayerSlots) {
-            ItemStack slotItem = otherPlayer.getOpenInventory().getItem(i);
-            int index = otherPlayerSlots.indexOf(i);
+        if (addItemToInvAndDrop(item, player)) {
+            player.playSound(player.getLocation(), Sound.BLOCK_CHEST_LOCKED, 1.0F, 0.75F);
+            return;
+        }
 
-            assert slotItem != null;
-            if (slotItem.getType() == Material.LIGHT_GRAY_STAINED_GLASS_PANE) {
-                otherPlayer.getOpenInventory().setItem(i, item);
-                playerToItemsMap.get(player).put(index, item);
+        playerToItemsMap.get(player).clear();
 
-                break;
-            } else if (slotItem.isSimilar(item) && slotItem.getAmount() < 64) {
-                int quantity = slotItem.getAmount() + item.getAmount();
-                int stackSize = Math.min(quantity, 64);
-                slotItem.setAmount(stackSize);
+        for (int slot : playerSlots) {
+            ItemStack slotItem = topInventory.getItem(slot);
+            int index = playerSlots.indexOf(slot);
 
-                otherPlayer.getOpenInventory().setItem(i, slotItem);
+            if (slotItem != null && slotItem.getType() != Material.AIR) {
+                otherInventory.setItem(otherPlayerSlots.get(index), slotItem);
                 playerToItemsMap.get(player).put(index, slotItem);
-
-                if (quantity > 64) {
-                    addItem(player, item.asQuantity(quantity - 64));
-                }
-
-                break;
             }
         }
     }
 
-    public synchronized void removeItem(Player player, ItemStack item) {
-        for (int i : otherPlayerSlots) {
-            int index = otherPlayerSlots.indexOf(i);
+    public synchronized void removeItemFromTrade(Player player, ItemStack item, int clickedSlot) {
+        Player otherPlayer = getOtherPlayer(player);
+        Inventory otherInventory = otherPlayer.getOpenInventory().getTopInventory();
+        Inventory playerInventory = player.getOpenInventory().getTopInventory();
 
-            ItemStack slotItem = getOtherPlayer(player).getOpenInventory().getItem(i);
-            ItemStack invisFiller = buildFiller(true);
+        int removedIndex = playerSlots.indexOf(clickedSlot);
+        playerToItemsMap.get(player).remove(removedIndex);
+        playerInventory.removeItem(item);
 
-            assert slotItem != null;
-            if (slotItem.equals(item)) {
-                getOtherPlayer(player).getOpenInventory().setItem(i, invisFiller);
-                playerToItemsMap.get(player).remove(index);
+        HashMap<Integer, ItemStack> shiftedItems = new HashMap<>();
 
-                shiftItems(player, index);
-                break;
-            }
+        int index = 0;
+        for (Map.Entry<Integer, ItemStack> entry : playerToItemsMap.get(player).entrySet()) {
+            shiftedItems.put(index++, entry.getValue());
         }
+
+        shiftedItems.forEach((i, itemStack) -> {
+            playerInventory.setItem(playerSlots.get(i), itemStack);
+            otherInventory.setItem(otherPlayerSlots.get(i), itemStack);
+        });
+
+        playerToItemsMap.get(player).clear();
+        playerToItemsMap.get(player).putAll(shiftedItems);
     }
 
     public void confirm(Player player) {
@@ -147,56 +139,19 @@ public class Trade {
         changeToCancelledGUI(player);
     }
 
-    private void startCountdown() {
-        task = new CountdownTask().runTaskTimer(main, 0, 1);
+    private boolean addItemToInvAndDrop(ItemStack item, Player player) {
+        HashMap<Integer, ItemStack> leftovers = player.getInventory().addItem(item);
+
+        if (leftovers.isEmpty()) {
+            return false;
+        } else {
+            leftovers.forEach((slot, leftover) -> player.getWorld().dropItem(player.getLocation(), leftover));
+            return true;
+        }
     }
 
-    private void shiftItems(Player player, int removedIndex) {
-        //Update items map
-        HashMap<Integer, ItemStack> itemsMap = playerToItemsMap.get(player);
-
-        List<Integer> keysToShift = itemsMap.keySet().stream()
-            .filter(key -> key > removedIndex)
-            .sorted()
-            .toList();
-
-        keysToShift.forEach(key -> {
-            ItemStack value = itemsMap.remove(key);
-            itemsMap.put(key - 1, value);
-        });
-
-        //Shift items visually in both GUIs
-        for (int i : otherPlayerSlots) {
-            Inventory otherInventory = getOtherPlayer(player).getOpenInventory().getTopInventory();
-            ItemStack slotItem = otherInventory.getItem(i);
-            int slotIndex = otherPlayerSlots.indexOf(i);
-
-            if (slotIndex > removedIndex) {
-                assert slotItem != null;
-                if (slotItem.getType() == Material.LIGHT_GRAY_STAINED_GLASS_PANE) {
-                    break;
-                }
-
-                otherInventory.setItem(i, buildFiller(true));
-                otherInventory.setItem(i - (i == 4 ? 6 : 1), slotItem);
-            }
-        }
-
-        for (int i : playerSlots) {
-            Inventory playerInventory = player.getOpenInventory().getTopInventory();
-            ItemStack slotItem = playerInventory.getItem(i);
-            int slotIndex = playerSlots.indexOf(i);
-
-            if (slotIndex > removedIndex) {
-                assert slotItem != null;
-                if (slotItem.getType() == Material.LIGHT_GRAY_STAINED_GLASS_PANE) {
-                    break;
-                }
-
-                playerInventory.setItem(i, buildFiller(true));
-                playerInventory.setItem(i - (i == 4 ? 6 : 1), slotItem);
-            }
-        }
+    private void startCountdown() {
+        task = new CountdownTask().runTaskTimer(main, 0, 1);
     }
 
     private Player getOtherPlayer(@NotNull Player player) {

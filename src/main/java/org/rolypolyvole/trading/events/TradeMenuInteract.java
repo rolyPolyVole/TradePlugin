@@ -13,7 +13,6 @@ import org.rolypolyvole.trading.events.baseEvent.TradeMenuEvent;
 import org.rolypolyvole.trading.trade.Trade;
 
 import java.util.HashMap;
-import java.util.List;
 
 public class TradeMenuInteract extends TradeMenuEvent {
     public TradeMenuInteract(Trading main) {
@@ -23,25 +22,25 @@ public class TradeMenuInteract extends TradeMenuEvent {
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onTradeMenuRemoveItem(InventoryClickEvent event) {
         Inventory inventory = event.getClickedInventory();
-        List<Integer> interactableSlots = List.of(0, 1, 2, 3, 9, 10, 11, 12);
 
         if (isTradeGUI(inventory)) {
             ItemStack item = event.getCurrentItem();
             Player player = (Player) event.getWhoClicked();
+            int slot = event.getSlot();
 
             if (item == null || item.getType().equals(Material.AIR)) {
                 return;
             }
 
-            if (interactableSlots.contains(event.getSlot())) {
+            if (Trade.playerSlots.contains(slot)) {
                 assert inventory != null;
-                inventory.setItem(event.getSlot(), new ItemStack(Material.AIR));
+                inventory.setItem(slot, new ItemStack(Material.AIR));
 
                 Trade trade = main.invToTradeMap.get(inventory);
-                trade.removeItem(player, item);
+                trade.removeItemFromTrade(player, item, slot);
 
                 player.getInventory().addItem(item).forEach(
-                    (slot, leftover) -> player.getWorld().dropItem(player.getLocation(), leftover)
+                    (_slot, leftover) -> player.getWorld().dropItem(player.getLocation(), leftover)
                 );
             }
 
@@ -69,16 +68,16 @@ public class TradeMenuInteract extends TradeMenuEvent {
         if (isTradeGUI(upperInventory) && !clickedInventory.equals(upperInventory)) {
             HashMap<Integer, ItemStack> leftOver = upperInventory.addItem(item);
 
-            event.setCancelled(true);
-
             if (leftOver.isEmpty()) {
                 player.getInventory().removeItem(item);
-                main.invToTradeMap.get(upperInventory).addItem(player, item);
+                main.invToTradeMap.get(upperInventory).addItemToTrade(player, item);
 
                 player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.8F, 1.0F);
             } else {
                 player.playSound(player.getLocation(), Sound.BLOCK_CHEST_LOCKED, 1.0F, 0.75F);
             }
+
+            event.setCancelled(true);
         }
     }
 }
