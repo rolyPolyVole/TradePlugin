@@ -1,0 +1,8 @@
+name: Trading
+version: '${version}'
+main: org.rolypolyvole.trading.Trading
+api-version: '1.20'
+commands:
+  trade:
+    description: Send a trade request to a player
+    usage: "Invalid usage! /trade <player>"
